@@ -13,20 +13,19 @@ permissions:
 jobs:
   release-build:
     runs-on: ubuntu-latest
-    container:
-      image: python:3.11-slim
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install system dependencies
-        run: |
-          apt-get update
-          apt-get install -y curl
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
 
       - name: Install uv
         run: |
           curl -LsSf https://astral.sh/uv/install.sh | sh
+          export PATH="/root/.cargo/bin:$PATH"
           uv --version
 
       - name: Build release distributions
@@ -49,7 +48,7 @@ jobs:
 
     environment:
       name: pypi
-      url: https://pypi.org/p/ynab-mcp-server  # Updated with your package name
+      url: https://pypi.org/p/ynab-mcp-server
 
     steps:
       - name: Retrieve release distributions
