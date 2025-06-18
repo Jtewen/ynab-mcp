@@ -23,10 +23,10 @@ jobs:
           python-version: "3.11"
 
       - name: Install uv
+        shell: bash
         run: |
           curl -LsSf https://astral.sh/uv/install.sh | sh
-          export PATH="/root/.cargo/bin:$PATH"
-          uv --version
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
       - name: Build release distributions
         run: |
