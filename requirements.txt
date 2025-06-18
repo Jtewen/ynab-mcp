@@ -1,0 +1,9 @@
+mcp>=1.9.4
+ynab
+pydantic
+pydantic-settings
+
+# Development dependencies
+pytest>=7.0.0
+pytest-asyncio>=0.21.0
+pytest-cov>=4.1.0 

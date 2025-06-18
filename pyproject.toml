@@ -1,0 +1,81 @@
+[project]
+name = "ynab-mcp-server"
+version = "0.1.1"
+description = "YNAB MCP integration for managing budgets and transactions"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [
+    { name = "Jake Ewen", email = "jacobt.ewen@gmail.com" }
+]
+keywords = ["ynab", "mcp", "budget", "finance", "agentic", "LLM", "AI"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Office/Business :: Financial",
+]
+dependencies = [
+    "mcp>=1.9.4",
+    "ynab",
+    "pydantic",
+    "pydantic-settings",
+]
+
+[project.urls]
+Homepage = "https://github.com/jewen/ynab-mcp"
+Repository = "https://github.com/jewen/ynab-mcp"
+Issues = "https://github.com/jewen/ynab-mcp/issues"
+
+[project.scripts]
+ynab-mcp-server = "ynab_mcp_server:main"
+
+[project.optional-dependencies]
+test = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.1.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+addopts = "-v --cov=ynab_mcp --cov-report=term-missing"
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.coverage.run]
+source = ["ynab_mcp"]
+omit = ["tests/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if __name__ == .__main__.:",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort
+    "B",  # flake8-bugbear
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
