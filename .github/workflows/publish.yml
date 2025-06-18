@@ -19,6 +19,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install system dependencies
+        run: |
+          apt-get update
+          apt-get install -y curl
+
       - name: Install uv
         run: |
           curl -LsSf https://astral.sh/uv/install.sh | sh
