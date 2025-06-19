@@ -243,8 +243,6 @@ class ListTransactionsInput(BudgetIdInput):
     @model_validator(mode='before')
     @classmethod
     def check_exclusive_fields(cls, values):
-        if values.get('account_id') and values.get('month'):
-            raise ValueError('Only one of "account_id" or "month" can be provided.')
         if not values.get('account_id') and not values.get('month'):
             raise ValueError('Either "account_id" or "month" must be provided.')
         if values.get('month') and values.get('since_date'):

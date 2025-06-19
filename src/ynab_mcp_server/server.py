@@ -201,7 +201,7 @@ async def handle_call_tool(
         
         limit = int(args.limit) if args.limit is not None else None
         
-        if args.account_id:
+        if args.account_id and not args.month:
             transactions = await ynab_client.get_transactions(
                 budget_id=budget_id,
                 account_id=args.account_id,
@@ -210,15 +210,37 @@ async def handle_call_tool(
             )
             header = f"Here are the latest transactions for account {args.account_id}:"
         elif args.month:
-            transactions = await ynab_client.get_monthly_transactions(
+            since_date = args.month
+            if args.account_id:
+                transactions = await ynab_client.get_transactions(
+                    budget_id=budget_id,
+                    account_id=args.account_id,
+                    since_date=since_date,
+                )
+                header = f"Here are the transactions for account {args.account_id} in {args.month}:"
+            else:
+                transactions = await ynab_client.get_monthly_transactions(
+                    budget_id=budget_id,
+                    month=since_date,
+                )
+                header = f"Here are the transactions for {args.month}:"
+
+            if transactions:
+                # Filter transactions to the specified month
+                transactions = [
+                    t for t in transactions if str(t.var_date).startswith(since_date[:7])
+                ]
+                if limit:
+                    transactions = transactions[:limit]
+        else:
+            # This case should now be primarily for account_id with since_date
+            transactions = await ynab_client.get_transactions(
                 budget_id=budget_id,
-                month=args.month,
+                account_id=args.account_id,
+                since_date=args.since_date,
                 limit=limit,
             )
-            header = f"Here are the transactions for {args.month}:"
-        else:
-            # This case should be prevented by the model validator
-            raise ValueError("Either 'account_id' or 'month' must be provided.")
+            header = f"Here are the latest transactions for account {args.account_id}:"
 
         if not transactions:
             return [types.TextContent(type="text", text="No transactions found.")]
