@@ -14,14 +14,18 @@ A Model Context Protocol (MCP) server for seamless integration with You Need A B
       "args": ["ynab-mcp-server"],
       "env": {
         "YNAB_PAT": "your_token_here",
-        // "YNAB_DEFAULT_BUDGET_ID": "your_budget_id", // Optional
-        // "YNAB_READ_ONLY": "true" // Optional
       }
     }
   }
 }
 ```
-
+Optional environment variables:
+```json
+"env": {
+  "YNAB_DEFAULT_BUDGET_ID": "your_budget_id",
+  "YNAB_READ_ONLY": "true"
+}
+```
 ## Features
 
 - **Complete Budget Management**
@@ -87,12 +91,17 @@ uv run ynab-mcp-server
       "command": "uvx",
       "args": ["ynab-mcp-server"],
       "env": {
-        "YNAB_PAT": "your_token_here",
-        // "YNAB_DEFAULT_BUDGET_ID": "your_budget_id", // Optional
-        // "YNAB_READ_ONLY": "true" // Optional
+        "YNAB_PAT": "your_token_here"
       }
     }
   }
+}
+```
+Optional environment variables:
+```json
+env: {
+  "YNAB_DEFAULT_BUDGET_ID": "your_budget_id",
+  "YNAB_READ_ONLY": "true"
 }
 ```
 
