@@ -16,9 +16,11 @@ from ynab.api import (
     transactions_api,
 )
 from ynab.models import (
+    NewTransaction,
     PatchMonthCategoryWrapper,
     PatchPayeeWrapper,
     PatchTransactionsWrapper,
+    PostTransactionsWrapper,
     SaveMonthCategory,
     SavePayee,
     SaveTransactionWithIdOrImportId,
@@ -229,6 +231,21 @@ class YNABClient:
         update_wrapper = PatchTransactionsWrapper(transactions=transactions)
         return await self._run_sync(
             self._transactions_api.update_transactions, budget_id, update_wrapper
+        )
+
+    async def create_transaction(
+        self, budget_id: str, transaction: NewTransaction
+    ) -> ynab.TransactionDetail:
+        response = await self._run_sync(
+            self._transactions_api.create_transaction,
+            budget_id,
+            PostTransactionsWrapper(transaction=transaction),
+        )
+        return response.data.transaction
+
+    async def delete_transaction(self, budget_id: str, transaction_id: str):
+        return await self._run_sync(
+            self._transactions_api.delete_transaction, budget_id, transaction_id
         )
 
 

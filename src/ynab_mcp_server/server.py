@@ -5,8 +5,18 @@ import mcp.server.stdio
 import mcp.types as types
 from mcp.server import NotificationOptions, Server
 from mcp.server.models import InitializationOptions
-from ynab.models import SaveTransactionWithIdOrImportId
+from ynab.models import NewTransaction, SaveTransactionWithIdOrImportId
 
+from .tool_models import (
+    CreateTransactionInput,
+    DeleteTransactionInput,
+    ListAccountsInput,
+    ListCategoriesInput,
+    ListMonthlyTransactionsInput,
+    ListPayeesInput,
+    ListTransactionsInput,
+    UpdateTransactionsInput,
+)
 from .ynab_client import ynab_client
 
 server = Server("ynab-mcp")
@@ -21,71 +31,22 @@ async def handle_list_tools() -> list[types.Tool]:
         types.Tool(
             name="list-budgets",
             description="List all available YNAB budgets",
-            inputSchema={
-                "type": "object",
-                "properties": {},
-            },
+            inputSchema={"type": "object", "properties": {}},
         ),
         types.Tool(
             name="list-accounts",
             description="List all accounts for a given budget",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "budget_id": {
-                        "type": "string",
-                        "description": "The ID of the budget. If not provided, the default budget will be used.",
-                    }
-                },
-            },
+            inputSchema=ListAccountsInput.model_json_schema(),
         ),
         types.Tool(
             name="list-transactions",
             description="List transactions for a given account",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "budget_id": {
-                        "type": "string",
-                        "description": "The ID of the budget. If not provided, the default budget will be used.",
-                    },
-                    "account_id": {
-                        "type": "string",
-                        "description": "The ID of the account",
-                    },
-                    "since_date": {
-                        "type": "string",
-                        "description": "The starting date for transactions (YYYY-MM-DD)",
-                    },
-                    "limit": {
-                        "type": "integer",
-                        "description": "The maximum number of transactions to return",
-                    }
-                },
-                "required": ["account_id"],
-            },
+            inputSchema=ListTransactionsInput.model_json_schema(),
         ),
         types.Tool(
             name="list-monthly-transactions",
             description="List all transactions for a given month, across all accounts.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "month": {
-                        "type": "string",
-                        "description": "The month to get transactions for (YYYY-MM-DD)",
-                    },
-                    "limit": {
-                        "type": "integer",
-                        "description": "The maximum number of transactions to return",
-                    },
-                    "budget_id": {
-                        "type": "string",
-                        "description": "The ID of the budget. If not provided, the default budget will be used.",
-                    },
-                },
-                "required": ["month"],
-            },
+            inputSchema=ListMonthlyTransactionsInput.model_json_schema(),
         ),
         types.Tool(
             name="list-categories",
@@ -93,30 +54,12 @@ async def handle_list_tools() -> list[types.Tool]:
                 "List all categories for a given budget, including their budgeted amounts, "
                 "activity, and goals."
             ),
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "budget_id": {
-                        "type": "string",
-                        "description": (
-                            "The ID of the budget. If not provided, the default budget will be used."
-                        ),
-                    }
-                },
-            },
+            inputSchema=ListCategoriesInput.model_json_schema(),
         ),
         types.Tool(
             name="list-payees",
             description="List all payees for a given budget",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "budget_id": {
-                        "type": "string",
-                        "description": "The ID of the budget. If not provided, the default budget will be used.",
-                    }
-                },
-            },
+            inputSchema=ListPayeesInput.model_json_schema(),
         ),
         types.Tool(
             name="rename-payees",
@@ -201,32 +144,19 @@ async def handle_list_tools() -> list[types.Tool]:
             },
         ),
         types.Tool(
+            name="create-transaction",
+            description="Create a new transaction.",
+            inputSchema=CreateTransactionInput.model_json_schema(),
+        ),
+        types.Tool(
             name="update-transactions",
             description="Update one or more transactions with new categories, payees, memos, etc.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "budget_id": {"type": "string", "description": "The ID of the budget. If not provided, the default budget will be used."},
-                    "transactions": {
-                        "type": "array",
-                        "description": "A list of transactions to update.",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "id": {"type": "string"},
-                                "category_id": {"type": "string"},
-                                "payee_id": {"type": "string"},
-                                "memo": {"type": "string"},
-                                "cleared": {"type": "string", "enum": ["cleared", "uncleared", "reconciled"]},
-                                "approved": {"type": "boolean"},
-                                "flag_color": {"type": "string", "enum": ["red", "orange", "yellow", "green", "blue", "purple"]},
-                            },
-                            "required": ["id"],
-                        }
-                    },
-                },
-                "required": ["transactions"],
-            },
+            inputSchema=UpdateTransactionsInput.model_json_schema(),
+        ),
+        types.Tool(
+            name="delete-transaction",
+            description="Delete a transaction.",
+            inputSchema=DeleteTransactionInput.model_json_schema(),
         ),
         types.Tool(
             name="list-scheduled-transactions",
@@ -319,7 +249,8 @@ async def handle_call_tool(
             )
         ]
     elif name == "list-accounts":
-        budget_id = await _get_budget_id(arguments)
+        args = ListAccountsInput.model_validate(arguments or {})
+        budget_id = await _get_budget_id(args.model_dump())
         accounts = await ynab_client.get_accounts(budget_id=budget_id)
 
         if not accounts:
@@ -336,17 +267,13 @@ async def handle_call_tool(
             )
         ]
     elif name == "list-transactions":
-        if not arguments or "account_id" not in arguments:
-            raise ValueError("Missing account_id argument")
-        budget_id = await _get_budget_id(arguments)
-        account_id = arguments["account_id"]
-        since_date = arguments.get("since_date")
-        limit = arguments.get("limit")
+        args = ListTransactionsInput.model_validate(arguments or {})
+        budget_id = await _get_budget_id(args.model_dump())
         transactions = await ynab_client.get_transactions(
             budget_id=budget_id,
-            account_id=account_id,
-            since_date=since_date,
-            limit=limit,
+            account_id=args.account_id,
+            since_date=args.since_date,
+            limit=args.limit,
         )
 
         if not transactions:
@@ -364,15 +291,12 @@ async def handle_call_tool(
             )
         ]
     elif name == "list-monthly-transactions":
-        if not arguments or "month" not in arguments:
-            raise ValueError("Missing month argument")
-        budget_id = await _get_budget_id(arguments)
-        month = arguments["month"]
-        limit = arguments.get("limit")
+        args = ListMonthlyTransactionsInput.model_validate(arguments or {})
+        budget_id = await _get_budget_id(args.model_dump())
         transactions = await ynab_client.get_monthly_transactions(
             budget_id=budget_id,
-            month=month,
-            limit=limit,
+            month=args.month,
+            limit=args.limit,
         )
 
         if not transactions:
@@ -387,11 +311,12 @@ async def handle_call_tool(
         return [
             types.TextContent(
                 type="text",
-                text=f"Here are the transactions for {month}:\n{monthly_list}",
+                text=f"Here are the transactions for {args.month}:\n{monthly_list}",
             )
         ]
     elif name == "list-categories":
-        budget_id = await _get_budget_id(arguments)
+        args = ListCategoriesInput.model_validate(arguments or {})
+        budget_id = await _get_budget_id(args.model_dump())
         category_groups = await ynab_client.get_categories(budget_id=budget_id)
 
         if not category_groups:
@@ -421,7 +346,8 @@ async def handle_call_tool(
                             )
         return [types.TextContent(type="text", text=output)]
     elif name == "list-payees":
-        budget_id = await _get_budget_id(arguments)
+        args = ListPayeesInput.model_validate(arguments or {})
+        budget_id = await _get_budget_id(args.model_dump())
         payees = await ynab_client.get_payees(budget_id=budget_id)
 
         if not payees:
@@ -485,26 +411,55 @@ async def handle_call_tool(
                 text=f"Successfully assigned {amount / 1000:.2f} to category {category_id} for {month}.",
             )
         ]
+    elif name == "create-transaction":
+        args = CreateTransactionInput.model_validate(arguments or {})
+        budget_id = await _get_budget_id(args.model_dump())
+        
+        # The YNAB SDK's SaveTransaction model doesn't accept None for optional fields,
+        # so we need to build a dictionary with only the non-None values.
+        transaction_data = {
+            k: v for k, v in args.model_dump().items() if v is not None and k != "budget_id"
+        }
+        
+        new_transaction = await ynab_client.create_transaction(
+            budget_id=budget_id, transaction=NewTransaction(**transaction_data)
+        )
+        return [
+            types.TextContent(
+                type="text",
+                text=f"Successfully created transaction with ID: {new_transaction.id}",
+            )
+        ]
     elif name == "update-transactions":
-        if (
-            not arguments
-            or "transactions" not in arguments
-        ):
-            raise ValueError("Missing required arguments")
-
-        budget_id = await _get_budget_id(arguments)
-        transactions_to_update = arguments["transactions"]
+        args = UpdateTransactionsInput.model_validate(arguments or {})
+        budget_id = await _get_budget_id(args.model_dump())
 
         updates = [
-            SaveTransactionWithIdOrImportId(**tx_data)
-            for tx_data in transactions_to_update
+            SaveTransactionWithIdOrImportId(
+                **{k: v for k, v in tx.model_dump().items() if v is not None}
+            )
+            for tx in args.transactions
         ]
         await ynab_client.update_transactions(budget_id=budget_id, transactions=updates)
 
         return [
             types.TextContent(
                 type="text",
-                text=f"Successfully updated {len(transactions_to_update)} transactions.",
+                text=f"Successfully updated {len(args.transactions)} transactions.",
+            )
+        ]
+    elif name == "delete-transaction":
+        args = DeleteTransactionInput.model_validate(arguments or {})
+        budget_id = await _get_budget_id(args.model_dump())
+
+        await ynab_client.delete_transaction(
+            budget_id=budget_id, transaction_id=args.transaction_id
+        )
+
+        return [
+            types.TextContent(
+                type="text",
+                text=f"Successfully deleted transaction {args.transaction_id}.",
             )
         ]
     elif name == "move-budget-amount":
