@@ -11,18 +11,25 @@ from ynab.api import (
     accounts_api,
     budgets_api,
     categories_api,
+    months_api,
     payees_api,
+    payee_locations_api,
     scheduled_transactions_api,
     transactions_api,
+    user_api,
 )
 from ynab.models import (
     NewTransaction,
     PatchMonthCategoryWrapper,
     PatchPayeeWrapper,
     PatchTransactionsWrapper,
+    PostScheduledTransactionWrapper,
     PostTransactionsWrapper,
+    PutScheduledTransactionWrapper,
     SaveMonthCategory,
     SavePayee,
+    SaveScheduledTransaction,
+    SaveTransactionsResponse,
     SaveTransactionWithIdOrImportId,
 )
 
@@ -35,10 +42,11 @@ class NotesManager:
         self.data_dir = Path(os.environ.get('XDG_DATA_HOME', '/tmp/ynab-mcp'))
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.financial_overview_path = self.data_dir / "financial_overview.json"
-        self._ensure_overview_exists()
+        self.sync_state_path = self.data_dir / "sync_state.json"
+        self._ensure_files_exist()
 
-    def _ensure_overview_exists(self):
-        """Ensure the overview file exists with initial structure"""
+    def _ensure_files_exist(self):
+        """Ensure the overview and sync state files exist with initial structure"""
         if not self.financial_overview_path.exists():
             initial_overview = {
                 "last_updated": self._get_timestamp(),
@@ -55,6 +63,15 @@ class NotesManager:
                 "context_notes": []
             }
             self.save_overview(initial_overview)
+
+        if not self.sync_state_path.exists():
+            initial_state = {
+                "accounts": None,
+                "categories": None,
+                "payees": None,
+                "transactions": None
+            }
+            self._save_state(initial_state)
 
     def _get_timestamp(self) -> str:
         """Get current timestamp in ISO format"""
@@ -99,6 +116,34 @@ class NotesManager:
         overview["last_updated"] = self._get_timestamp()
         self.save_overview(overview)
 
+    def _load_state(self) -> dict:
+        """Load the sync state data with file locking"""
+        if not self.sync_state_path.exists():
+            return {}
+
+        def read_file(f):
+            return json.load(f)
+
+        return self._with_file_lock(self.sync_state_path, 'r', read_file)
+
+    def _save_state(self, data: dict):
+        """Save the sync state data with file locking"""
+        temp_path = self.sync_state_path.with_suffix('.tmp')
+        with open(temp_path, 'w') as f:
+            json.dump(data, f, indent=2)
+        temp_path.replace(self.sync_state_path)
+
+    def get_cursor(self, key: str) -> int | None:
+        """Get the cursor for a specific endpoint."""
+        state = self._load_state()
+        return state.get(key)
+
+    def set_cursor(self, key: str, value: int):
+        """Set the cursor for a specific endpoint."""
+        state = self._load_state()
+        state[key] = value
+        self._save_state(state)
+
 
 class YNABClient:
     def __init__(self, token: str):
@@ -112,22 +157,30 @@ class YNABClient:
         self._scheduled_transactions_api = (
             scheduled_transactions_api.ScheduledTransactionsApi(self.api_client)
         )
+        self._months_api = months_api.MonthsApi(self.api_client)
+        self._user_api = user_api.UserApi(self.api_client)
+        self._payee_locations_api = payee_locations_api.PayeeLocationsApi(
+            self.api_client
+        )
         self.notes = NotesManager()
 
     async def _run_sync(self, func, *args, **kwargs):
         """Run a synchronous function in a separate thread."""
         return await asyncio.to_thread(func, *args, **kwargs)
 
+    async def get_user(self) -> ynab.User:
+        response = await self._run_sync(self._user_api.get_user)
+        return response.data.user
+
     async def get_budgets(self) -> list[ynab.BudgetSummary]:
         response = await self._run_sync(self._budgets_api.get_budgets)
         return response.data.budgets
 
-    async def get_default_budget(self) -> ynab.BudgetSummary:
-        """Gets the first available budget, assuming only one is used."""
-        budgets = await self.get_budgets()
-        if not budgets:
-            raise ValueError("No budgets found in YNAB account.")
-        return budgets[0]
+    async def get_account_by_id(self, budget_id: str, account_id: str) -> ynab.Account:
+        response = await self._run_sync(
+            self._accounts_api.get_account_by_id, budget_id, account_id
+        )
+        return response.data.account
 
     async def get_accounts(self, budget_id: str) -> list[ynab.Account]:
         response = await self._run_sync(self._accounts_api.get_accounts, budget_id)
@@ -176,6 +229,14 @@ class YNABClient:
         response = await self._run_sync(self._categories_api.get_categories, budget_id)
         return response.data.category_groups
 
+    async def get_category_by_id(
+        self, budget_id: str, category_id: str
+    ) -> ynab.Category:
+        response = await self._run_sync(
+            self._categories_api.get_category_by_id, budget_id, category_id
+        )
+        return response.data.category
+
     async def get_month_category(
         self, budget_id: str, month: str, category_id: str
     ) -> ynab.Category:
@@ -196,9 +257,43 @@ class YNABClient:
         )
         return response.data.scheduled_transactions
 
+    async def create_scheduled_transaction(
+        self, budget_id: str, transaction: SaveScheduledTransaction
+    ):
+        wrapper = PostScheduledTransactionWrapper(scheduled_transaction=transaction)
+        return await self._run_sync(
+            self._scheduled_transactions_api.create_scheduled_transaction,
+            budget_id,
+            wrapper,
+        )
+
+    async def update_scheduled_transaction(
+        self, budget_id: str, transaction_id: str, transaction: SaveScheduledTransaction
+    ):
+        wrapper = PutScheduledTransactionWrapper(scheduled_transaction=transaction)
+        return await self._run_sync(
+            self._scheduled_transactions_api.update_scheduled_transaction,
+            budget_id,
+            transaction_id,
+            wrapper,
+        )
+
+    async def delete_scheduled_transaction(self, budget_id: str, transaction_id: str):
+        return await self._run_sync(
+            self._scheduled_transactions_api.delete_scheduled_transaction,
+            budget_id,
+            transaction_id,
+        )
+
     async def get_payees(self, budget_id: str) -> list[ynab.Payee]:
         response = await self._run_sync(self._payees_api.get_payees, budget_id)
         return response.data.payees
+
+    async def get_payee_by_id(self, budget_id: str, payee_id: str) -> ynab.Payee:
+        response = await self._run_sync(
+            self._payees_api.get_payee_by_id, budget_id, payee_id
+        )
+        return response.data.payee
 
     async def update_payee(self, budget_id: str, payee_id: str, name: str):
         payee = SavePayee(name=name)
@@ -243,10 +338,61 @@ class YNABClient:
         )
         return response.data.transaction
 
+    async def create_transactions(
+        self, budget_id: str, transactions: list[NewTransaction]
+    ) -> ynab.SaveTransactionsResponseData:
+        response = await self._run_sync(
+            self._transactions_api.create_transaction,
+            budget_id,
+            PostTransactionsWrapper(transactions=transactions),
+        )
+        return response.data
+
     async def delete_transaction(self, budget_id: str, transaction_id: str):
         return await self._run_sync(
             self._transactions_api.delete_transaction, budget_id, transaction_id
         )
+
+    async def get_budget_months(self, budget_id: str) -> list[ynab.MonthSummary]:
+        response = await self._run_sync(self._months_api.get_budget_months, budget_id)
+        return response.data.months
+
+    async def get_budget_month(self, budget_id: str, month: str) -> ynab.MonthDetail:
+        response = await self._run_sync(
+            self._months_api.get_budget_month, budget_id, month
+        )
+        return response.data.month
+
+    async def get_payee_locations(self, budget_id: str) -> list[ynab.PayeeLocation]:
+        response = await self._run_sync(
+            self._payee_locations_api.get_payee_locations, budget_id
+        )
+        return response.data.payee_locations
+
+    async def get_payee_location_by_id(
+        self, budget_id: str, payee_location_id: str
+    ) -> ynab.PayeeLocation:
+        response = await self._run_sync(
+            self._payee_locations_api.get_payee_location_by_id,
+            budget_id,
+            payee_location_id,
+        )
+        return response.data.payee_location
+
+    async def get_payee_locations_by_payee(
+        self, budget_id: str, payee_id: str
+    ) -> list[ynab.PayeeLocation]:
+        response = await self._run_sync(
+            self._payee_locations_api.get_payee_locations_by_payee,
+            budget_id,
+            payee_id,
+        )
+        return response.data.payee_locations
+
+    async def get_default_budget(self) -> ynab.BudgetSummary:
+        """Gets the first available budget, assuming only one is used."""
+        budgets = await self.get_budgets()
+        return budgets[0]
 
 
 ynab_client = YNABClient(token=settings.ynab_api_token)
